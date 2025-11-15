@@ -40,6 +40,24 @@ async function run() {
                 });
             }
         });
+        // parcel data by id
+        app.get("/parcel/:id", async (req, res) => {
+            try {
+                const { id } = req.params;
+
+                const parcel = await parcelCollection.findOne({ _id: new ObjectId(id) });
+
+                if (!parcel) {
+                    return res.status(404).json({ message: "Parcel not found" });
+                }
+
+                res.status(200).send(parcel);
+            } catch (error) {
+                console.error("Error fetching parcel:", error);
+                res.status(500).json({ message: "Failed to get parcel", error: error.message });
+            }
+        });
+
         // post parcel data 
         app.post("/parcels", async (req, res) => {
             try {
