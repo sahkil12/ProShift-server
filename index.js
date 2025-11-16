@@ -1,11 +1,12 @@
 const express = require("express");
 const cors = require("cors");
 const dotenv = require("dotenv");
+dotenv.config();
 const { MongoClient, ObjectId } = require('mongodb');
 const PORT = process.env.PORT || 5000;
-dotenv.config();
 const app = express();
 
+const stripe = require('stripe')(process.env.PAYMENT_KEY);
 // middleware
 app.use(cors());
 app.use(express.json());
@@ -19,6 +20,7 @@ async function run() {
         await client.connect();
         const db = client.db("ProShift");
         const parcelCollection = db.collection("parcels")
+        const paymentCollection = client.db("ProShift").collection("payments");
         // parcel data by email id 
         app.get("/parcels", async (req, res) => {
             try {
@@ -41,11 +43,11 @@ async function run() {
             }
         });
         // parcel data by id
-        app.get("/parcel/:id", async (req, res) => {
+        app.get("/parcels/:id", async (req, res) => {
             try {
                 const { id } = req.params;
-
-                const parcel = await parcelCollection.findOne({ _id: new ObjectId(id) });
+                const query = { _id: new ObjectId(id) }
+                const parcel = await parcelCollection.findOne(query);
 
                 if (!parcel) {
                     return res.status(404).json({ message: "Parcel not found" });
@@ -69,6 +71,83 @@ async function run() {
                 res.status(500).json({ message: "Failed to save parcel", error });
             }
         });
+
+        app.post("/create-payment-intent", async (req, res) => {
+            try {
+                const { amount, parcelId } = req.body;
+
+                const paymentIntent = await stripe.paymentIntents.create({
+                    amount: amount * 100, // Stripe needs amount in cents
+                    currency: "usd",
+                    metadata: { parcelId },
+                    payment_method_types: ["card"]
+                });
+
+                res.send({ clientSecret: paymentIntent.client_secret });
+            } catch (error) {
+                res.status(500).json({ message: "Stripe Error", error });
+            }
+        });
+
+        // POST /payments - save payment and update parcel status
+        app.post("/payments", async (req, res) => {
+            try {
+                const { parcelId, amount, paymentId, userEmail, transactionId, payment_method } = req.body;
+                // Update parcel payment_status
+                const parcelResult = await parcelCollection.updateOne(
+                    { _id: new ObjectId(parcelId) },
+                    {
+                        $set: {
+                            payment_status: "paid"
+                        }
+                    }
+                );
+                // Save payment history
+                const paymentData = {
+                    parcelId,
+                    amount,
+                    paymentId,   // Stripe paymentIntent id
+                    userEmail,
+                    transactionId,
+                    payment_method,
+                    paid_at_string: new Date().toISOString(),
+                    payment_date: new Date()
+                };
+                const paymentResult = await paymentCollection.insertOne(paymentData);
+
+                res.status(200).send({
+                    message: "Payment saved and parcel updated",
+                    parcelResult,
+                    paymentResult
+                });
+
+            } catch (error) {
+                console.error("Error saving payment:", error);
+                res.status(500).json({ message: "Failed to save payment", error });
+            }
+        });
+
+        // GET /payments - all or user-specific payments
+        app.get("/payments", async (req, res) => {
+            try {
+                const email = req.query.email;
+                //  query
+                const query = email ? { userEmail: email } : {};
+
+                const payments = await paymentCollection
+                    .find(query)
+                    .sort({ payment_date: -1 }) // latest first
+                    .toArray();
+
+                res.status(200).send(payments);
+
+            } catch (error) {
+                console.error("Error fetching payments:", error);
+                res.status(500).json({ message: "Failed to fetch payments", error });
+            }
+        });
+
+
         // Delete parcel by ID
         app.delete("/parcels/:id", async (req, res) => {
             try {
