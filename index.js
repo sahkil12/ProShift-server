@@ -21,6 +21,42 @@ async function run() {
         const db = client.db("ProShift");
         const parcelCollection = db.collection("parcels")
         const paymentCollection = client.db("ProShift").collection("payments");
+        const usersCollection = client.db("ProShift").collection("users");
+
+        // user data 
+        app.post("/users", async (req, res) => {
+            try {
+                const { name, email, photoURL, role, created_at, last_login } = req.body;
+
+                // Check if user exists
+                const existingUser = await usersCollection.findOne({ email });
+
+                if (existingUser) {
+                    // old user
+                    return res.send({
+                        status: "old_user",
+                        user: existingUser,
+                    });
+                }
+                //  If not exist, insert new user
+                const newUser = {
+                    name: name || "",
+                    email,
+                    photoURL: photoURL || "",
+                    role: role || "user",
+                    created_at: created_at || new Date().toISOString(),
+                    last_login: last_login || new Date().toISOString(),
+                };
+
+                const result = await usersCollection.insertOne(newUser);
+                res.send(result);
+
+            } catch (error) {
+                console.log(error);
+                res.status(500).send({ message: "Server error" });
+            }
+        });
+
         // parcel data by email id 
         app.get("/parcels", async (req, res) => {
             try {
