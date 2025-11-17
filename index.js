@@ -5,11 +5,20 @@ dotenv.config();
 const { MongoClient, ObjectId } = require('mongodb');
 const PORT = process.env.PORT || 5000;
 const app = express();
+const admin = require("firebase-admin");
 
 const stripe = require('stripe')(process.env.PAYMENT_KEY);
 // middleware
 app.use(cors());
 app.use(express.json());
+
+
+const serviceAccount = require("./proshift-firebase-admin-key.json");
+
+admin.initializeApp({
+    credential: admin.credential.cert(serviceAccount)
+});
+
 
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.gr8kgxz.mongodb.net/?appName=Cluster0`;
 
@@ -20,22 +29,53 @@ async function run() {
         await client.connect();
         const db = client.db("ProShift");
         const parcelCollection = db.collection("parcels")
-        const paymentCollection = client.db("ProShift").collection("payments");
-        const usersCollection = client.db("ProShift").collection("users");
+        const paymentCollection = db.collection("payments");
+        const usersCollection = db.collection("users");
+
+        // custom verify token 
+        const verifyFbToken = async (req, res, next) => {
+            const authHeader = req.headers.authorization;
+            if (!authHeader) {
+                return res.status(401).send({ message: "unauthorized access" });
+            }
+            const token = authHeader.split(" ")[1]
+            if (!token) {
+                return res.status(401).send({ message: "unauthorized access" });
+            }
+            // verify the token 
+            try {
+                const decoded = await admin.auth().verifyIdToken(token)
+                req.decoded = decoded
+                next()
+            }
+            catch (error) {
+                return res.status(403).send({ message: "forbidden access" });
+            }
+        }
 
         // user data 
         app.post("/users", async (req, res) => {
             try {
                 const { name, email, photoURL, role, created_at, last_login } = req.body;
+                const now = new Date().toISOString();
 
                 // Check if user exists
                 const existingUser = await usersCollection.findOne({ email });
 
                 if (existingUser) {
-                    // old user
+                    // update user last login
+                    const result = await usersCollection.updateOne(
+                        { email },
+                        {
+                            $set: {
+                                last_login: now
+                            }
+                        }
+                    )
                     return res.send({
                         status: "old_user",
-                        user: existingUser,
+                        inserted: false,
+                        last_login: now
                     });
                 }
                 //  If not exist, insert new user
@@ -58,9 +98,14 @@ async function run() {
         });
 
         // parcel data by email id 
-        app.get("/parcels", async (req, res) => {
+        app.get("/parcels", verifyFbToken, async (req, res) => {
             try {
                 const { email } = req.query;
+                const decodedEmail =  req.decoded.email;
+                if(decodedEmail !== email){
+                    res.status(403).send({message: "forbidden access"})
+                }
+
                 let query = {};
                 // If user email is provided
                 if (email) {
@@ -88,7 +133,6 @@ async function run() {
                 if (!parcel) {
                     return res.status(404).json({ message: "Parcel not found" });
                 }
-
                 res.status(200).send(parcel);
             } catch (error) {
                 console.error("Error fetching parcel:", error);
@@ -164,9 +208,13 @@ async function run() {
         });
 
         // GET /payments - all or user-specific payments
-        app.get("/payments", async (req, res) => {
+        app.get("/payments", verifyFbToken, async (req, res) => {
             try {
                 const email = req.query.email;
+                const decodedEmail =  req.decoded.email;
+                if(decodedEmail !== email){
+                    res.status(403).send({message: "forbidden access"})
+                }
                 //  query
                 const query = email ? { userEmail: email } : {};
 
@@ -182,7 +230,6 @@ async function run() {
                 res.status(500).json({ message: "Failed to fetch payments", error });
             }
         });
-
 
         // Delete parcel by ID
         app.delete("/parcels/:id", async (req, res) => {
