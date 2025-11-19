@@ -11,17 +11,14 @@ const stripe = require('stripe')(process.env.PAYMENT_KEY);
 // middleware
 app.use(cors());
 app.use(express.json());
-
-
+// firebase admin 
 const serviceAccount = require("./proshift-firebase-admin-key.json");
-
 admin.initializeApp({
     credential: admin.credential.cert(serviceAccount)
 });
-
-
+// mongodb uri
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.gr8kgxz.mongodb.net/?appName=Cluster0`;
-
+// mongodb client
 const client = new MongoClient(uri);
 
 async function run() {
@@ -31,6 +28,7 @@ async function run() {
         const parcelCollection = db.collection("parcels")
         const paymentCollection = db.collection("payments");
         const usersCollection = db.collection("users");
+        const ridersCollection = db.collection("riders")
 
         // custom verify token 
         const verifyFbToken = async (req, res, next) => {
@@ -52,7 +50,6 @@ async function run() {
                 return res.status(403).send({ message: "forbidden access" });
             }
         }
-
         // user data 
         app.post("/users", async (req, res) => {
             try {
@@ -96,16 +93,14 @@ async function run() {
                 res.status(500).send({ message: "Server error" });
             }
         });
-
         // parcel data by email id 
         app.get("/parcels", verifyFbToken, async (req, res) => {
             try {
                 const { email } = req.query;
-                const decodedEmail =  req.decoded.email;
-                if(decodedEmail !== email){
-                    res.status(403).send({message: "forbidden access"})
+                const decodedEmail = req.decoded.email;
+                if (decodedEmail !== email) {
+                    res.status(403).send({ message: "forbidden access" })
                 }
-
                 let query = {};
                 // If user email is provided
                 if (email) {
@@ -139,7 +134,6 @@ async function run() {
                 res.status(500).json({ message: "Failed to get parcel", error: error.message });
             }
         });
-
         // post parcel data 
         app.post("/parcels", async (req, res) => {
             try {
@@ -151,7 +145,7 @@ async function run() {
                 res.status(500).json({ message: "Failed to save parcel", error });
             }
         });
-
+        // payment intent 
         app.post("/create-payment-intent", async (req, res) => {
             try {
                 const { amount, parcelId } = req.body;
@@ -168,8 +162,7 @@ async function run() {
                 res.status(500).json({ message: "Stripe Error", error });
             }
         });
-
-        // POST /payments - save payment and update parcel status
+        // save payment and update parcel status
         app.post("/payments", async (req, res) => {
             try {
                 const { parcelId, amount, paymentId, userEmail, transactionId, payment_method } = req.body;
@@ -206,14 +199,13 @@ async function run() {
                 res.status(500).json({ message: "Failed to save payment", error });
             }
         });
-
-        // GET /payments - all or user-specific payments
+        // all or user-specific payments
         app.get("/payments", verifyFbToken, async (req, res) => {
             try {
                 const email = req.query.email;
-                const decodedEmail =  req.decoded.email;
-                if(decodedEmail !== email){
-                    res.status(403).send({message: "forbidden access"})
+                const decodedEmail = req.decoded.email;
+                if (decodedEmail !== email) {
+                    res.status(403).send({ message: "forbidden access" })
                 }
                 //  query
                 const query = email ? { userEmail: email } : {};
@@ -230,7 +222,6 @@ async function run() {
                 res.status(500).json({ message: "Failed to fetch payments", error });
             }
         });
-
         // Delete parcel by ID
         app.delete("/parcels/:id", async (req, res) => {
             try {
@@ -242,7 +233,41 @@ async function run() {
                 res.status(500).json({ message: "Failed to delete parcel", error });
             }
         });
+        // riders data post
+        app.post('/riders', async (req, res) => {
+            try {
+                const riderData = req.body
+                const result = await ridersCollection.insertOne(riderData)
+                res.status(201).send(result)
+            }
+            catch (error) {
+                console.error("Error saving parcel:", error);
+                res.status(500).json({ message: "Failed to save parcel", error });
+            }
+        })
+        // find rider based on status pending 
+        app.get("/riders/pending", async (req, res) => {
+            try {
+                const pendingRiders = await ridersCollection.find({ status: "Pending" }).toArray();
+                res.send(pendingRiders);
+            } catch (error) {
+                res.status(500).send({ message: "Failed to load pending riders", error });
+            }
+        });
 
+        // approve rider
+        app.patch("/riders/approve/:id", async (req, res) => {
+            const id = req.params.id;
+            const result = await ridersCollection.updateOne(
+                { _id: new ObjectId(id) },
+                {
+                    $set: {
+                        status: "Active"
+                    }
+                }
+            );
+            res.send(result);
+        });
         // Send a ping to confirm a successful connection
         await client.db("admin").command({ ping: 1 });
         console.log("Pinged your deployment. You successfully connected to MongoDB!");
@@ -255,10 +280,8 @@ run().catch(console.dir);
 app.get("/", (req, res) => {
     res.send("ProShift Parcel Delivery API is running 🚚");
 });
-
 // start server
 
 app.listen(PORT, () => {
     console.log(`✅ Server running on port ${PORT}`);
 });
-
