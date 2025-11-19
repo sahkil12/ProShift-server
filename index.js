@@ -254,6 +254,35 @@ async function run() {
                 res.status(500).send({ message: "Failed to load pending riders", error });
             }
         });
+        // active rider
+        app.get("/riders/active", async (req, res) => {
+            const search = req.query.search || "";
+
+            const filter = {
+                status: "Active",
+                $or: [
+                    { name: { $regex: search, $options: "i" } },
+                    { district: { $regex: search, $options: "i" } }
+                ]
+            };
+
+            const riders = await ridersCollection.find(filter).toArray();
+            res.send(riders);
+        });
+        // deactivate rider
+        app.patch("/riders/deactivate/:id", async (req, res) => {
+            const id = req.params.id;
+            const result = await ridersCollection.updateOne(
+                { _id: new ObjectId(id) },
+                {
+                    $set:
+                    {
+                        status: "Inactive"
+                    }
+                }
+            );
+            res.send(result);
+        });
 
         // approve rider
         app.patch("/riders/approve/:id", async (req, res) => {
