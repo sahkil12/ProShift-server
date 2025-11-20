@@ -89,7 +89,6 @@ async function run() {
                 res.send(result);
 
             } catch (error) {
-                console.log(error);
                 res.status(500).send({ message: "Server error" });
             }
         });
@@ -241,7 +240,6 @@ async function run() {
                 res.status(201).send(result)
             }
             catch (error) {
-                console.error("Error saving parcel:", error);
                 res.status(500).json({ message: "Failed to save parcel", error });
             }
         })
@@ -297,6 +295,20 @@ async function run() {
             );
             res.send(result);
         });
+        // reject rider 
+        app.patch("/riders/reject/:id", async (req, res) => {
+            const id = req.params.id;
+            const result = await ridersCollection.updateOne(
+                { _id: new ObjectId(id) },
+                {
+                    $set: {
+                        status: "Rejected"
+                    }
+                }
+            );
+            res.send(result);
+        });
+
         // Send a ping to confirm a successful connection
         await client.db("admin").command({ ping: 1 });
         console.log("Pinged your deployment. You successfully connected to MongoDB!");
