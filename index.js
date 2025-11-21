@@ -236,6 +236,40 @@ async function run() {
         app.post('/riders', async (req, res) => {
             try {
                 const riderData = req.body
+                const userEmail = riderData.email;
+                // check duplicate application 
+                const existingRider = await ridersCollection.findOne({
+                    email: userEmail,
+                    status: {
+                        $in: ["Pending", "Active"]
+                    }
+                })
+
+                if (existingRider) {
+                    return res.status(400).send({
+                        message: "You already have a rider application in progress or active."
+                    })
+                }
+                // find rejected rider
+                const rejectedRider = await ridersCollection.findOne({
+                    email: userEmail,
+                    status: "Rejected"
+                })
+                // 
+                if (rejectedRider) {
+                    const updatedDoc = {
+                        $set: {
+                            ...riderData,
+                            status: "Pending"
+                        }
+                    }
+                    const result = await ridersCollection.updateOne(
+                        { email: userEmail },
+                        updatedDoc
+                    )
+                    return res.status(200).send(result)
+                }
+
                 const result = await ridersCollection.insertOne(riderData)
                 res.status(201).send(result)
             }
@@ -285,15 +319,33 @@ async function run() {
         // approve rider
         app.patch("/riders/approve/:id", async (req, res) => {
             const id = req.params.id;
+            const filterID = { _id: new ObjectId(id) }
+            // check rider 
+            const rider = await ridersCollection.findOne(filterID)
+            if (!rider) return res.status(404).send({ message: "Rider Not Found" })
+            // update rider status active 
             const result = await ridersCollection.updateOne(
-                { _id: new ObjectId(id) },
+                filterID,
                 {
                     $set: {
                         status: "Active"
                     }
                 }
             );
-            res.send(result);
+
+            // update rider role 
+            const userRoleResult = await usersCollection.updateOne(
+                { email: rider.email },
+                {
+                    $set: {
+                        role: "rider"
+                    }
+                }
+            )
+            res.send({
+                message: "Rider approved and user role updated",
+                riderUpdate: result,
+            });
         });
         // reject rider 
         app.patch("/riders/reject/:id", async (req, res) => {
