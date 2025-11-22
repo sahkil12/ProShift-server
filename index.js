@@ -125,6 +125,35 @@ async function run() {
                 result
             });
         });
+
+        // Find user role by email
+        app.get("/users/role/:email", verifyFbToken, async (req, res) => {
+            try {
+                const email = req.params.email;
+                // email check 
+                if (!email) {
+                    return res.status(400).send({ message: "Email is required" });
+                }
+                // find user by email
+                const user = await usersCollection.findOne(
+                    { email: email }
+                );
+                // user check
+                if (!user) {
+                    return res.status(404).send({ message: "User not found" });
+                }
+                res.send({
+                    email: email,
+                    role: user.role || "user"
+                });
+
+            } catch (error) {
+                res.status(500).send({
+                    message: "Failed to fetch user role",
+                    error: error.message
+                });
+            }
+        });
         // user data 
         app.post("/users", async (req, res) => {
             try {
