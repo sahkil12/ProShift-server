@@ -50,6 +50,81 @@ async function run() {
                 return res.status(403).send({ message: "forbidden access" });
             }
         }
+        // admin verify 
+        const verifyAdmin = async (req, res, next) => {
+            const userEmail = req.decoded.email
+            const user = await usersCollection.findOne({
+                email: userEmail
+            })
+            // admin check 
+            if (!user || user.role !== "admin") {
+                return res.status(403).send({
+                    message: "Access denied (Admin only)"
+                })
+            }
+            next()
+        }
+        // search user by admin
+        app.get("/admin/users/search", verifyFbToken, verifyAdmin, async (req, res) => {
+            const emailQuery = req.query.email;
+
+            if (!emailQuery) {
+                return res.status(400).send({ message: "Please provide search text" });
+            }
+            // Case insensitive partial match
+            const users = await usersCollection.find({
+                email: { $regex: emailQuery, $options: "i" }
+            }).project({ password: 0 }).limit(15).toArray();
+
+            res.send(users);
+        });
+        // make admin
+        app.patch("/admin/make-admin/:email", verifyFbToken, verifyAdmin, async (req, res) => {
+            const targetEmail = req.params.email;
+
+            const user = await usersCollection.findOne({
+                email: targetEmail
+            });
+            if (!user) return res.status(404).send({ message: "User not found" });
+
+            const result = await usersCollection.updateOne({
+                email: targetEmail
+            },
+                {
+                    $set: {
+                        role: "admin"
+                    }
+                });
+
+            res.send({
+                message: "User is now admin",
+                result
+            });
+        });
+        // remove admin
+        app.patch("/admin/remove-admin/:email", verifyFbToken, verifyAdmin, async (req, res) => {
+            const targetEmail = req.params.email;
+
+            const user = await usersCollection.findOne({
+                email: targetEmail
+            });
+            // user check
+            if (!user) return res.status(404).send({ message: "User not found" });
+
+            const result = await usersCollection.updateOne({
+                email: targetEmail
+            },
+                {
+                    $set: {
+                        role: "user"
+                    }
+                });
+
+            res.send({
+                message: "Admin removed",
+                result
+            });
+        });
         // user data 
         app.post("/users", async (req, res) => {
             try {
@@ -270,7 +345,11 @@ async function run() {
                     return res.status(200).send(result)
                 }
 
-                const result = await ridersCollection.insertOne(riderData)
+                const result = await ridersCollection.insertOne({
+                    ...riderData,
+                    status: "Pending",
+                    created_at: new Date()
+                })
                 res.status(201).send(result)
             }
             catch (error) {
@@ -315,7 +394,6 @@ async function run() {
             );
             res.send(result);
         });
-
         // approve rider
         app.patch("/riders/approve/:id", async (req, res) => {
             const id = req.params.id;
@@ -345,6 +423,7 @@ async function run() {
             res.send({
                 message: "Rider approved and user role updated",
                 riderUpdate: result,
+                userRoleUpdate: userRoleResult
             });
         });
         // reject rider 
@@ -360,7 +439,6 @@ async function run() {
             );
             res.send(result);
         });
-
         // Send a ping to confirm a successful connection
         await client.db("admin").command({ ping: 1 });
         console.log("Pinged your deployment. You successfully connected to MongoDB!");
