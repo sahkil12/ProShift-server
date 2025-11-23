@@ -125,7 +125,6 @@ async function run() {
                 result
             });
         });
-
         // Find user role by email
         app.get("/users/role/:email", verifyFbToken, async (req, res) => {
             try {
@@ -386,7 +385,7 @@ async function run() {
             }
         })
         // find rider based on status pending 
-        app.get("/riders/pending", async (req, res) => {
+        app.get("/riders/pending", verifyFbToken, verifyAdmin, async (req, res) => {
             try {
                 const pendingRiders = await ridersCollection.find({ status: "Pending" }).toArray();
                 res.send(pendingRiders);
@@ -395,7 +394,7 @@ async function run() {
             }
         });
         // active rider
-        app.get("/riders/active", async (req, res) => {
+        app.get("/riders/active", verifyFbToken, verifyAdmin, async (req, res) => {
             const search = req.query.search || "";
 
             const filter = {
