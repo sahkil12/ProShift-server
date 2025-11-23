@@ -198,9 +198,10 @@ async function run() {
         // parcel data by email id 
         app.get("/parcels", verifyFbToken, async (req, res) => {
             try {
-                const { email } = req.query;
+                const { email, payment_status, delivery_status } = req.query;
                 const decodedEmail = req.decoded.email;
-                if (decodedEmail !== email) {
+
+                if (email && decodedEmail !== email) {
                     res.status(403).send({ message: "forbidden access" })
                 }
                 let query = {};
@@ -208,11 +209,19 @@ async function run() {
                 if (email) {
                     query.userEmail = email;
                 }
+                if (payment_status) {
+                    query.payment_status = payment_status
+                }
+                if (delivery_status) {
+                    query.delivery_status = delivery_status
+                }
+
                 const parcels = await parcelCollection
                     .find(query)
                     .sort({ creation_date: -1 })
                     .toArray();
                 res.send(parcels);
+
             } catch (error) {
                 res.status(500).json({
                     message: "Failed to fetch parcels",
