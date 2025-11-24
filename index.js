@@ -229,6 +229,56 @@ async function run() {
                 });
             }
         });
+        // 
+        app.patch("/parcels/assign-rider/:id", verifyFbToken, async (req, res) => {
+            try {
+                const parcelId = req.params.id;
+                const { riderId } = req.body;
+
+                if (!riderId) {
+                    return res.status(400).send({ message: "Rider ID is required" });
+                }
+                const rider = await ridersCollection.findOne({ _id: new ObjectId(riderId) });
+                // check rider 
+                if (!rider) return res.status(404).send({ message: "Rider not found" })
+
+                if (rider.work_status === "in-transit") {
+                    return res.status(400).send({ message: "Rider is already assigned to another parcel" });
+                }
+
+                const updateDoc = {
+                    $set: {
+                        assignedRider: riderId,
+                        delivery_status: "in-delivery",
+                        assignedAt: new Date()
+                    }
+                };
+                const parcelResult = await parcelCollection.updateOne(
+                    { _id: new ObjectId(parcelId) },
+                    updateDoc
+                );
+                // update rider
+                const riderUpdate = {
+                    $set: {
+                        work_status: "assigned",
+                        assignedParcelId: parcelId
+                    }
+                }
+                const riderResult = await ridersCollection.updateOne(
+                    { _id: new ObjectId(riderId) },
+                    riderUpdate
+                )
+                res.send({
+                    message: "Rider assigned successfully",
+                    parcelUpdate: parcelResult,
+                    riderUpdate: riderResult
+                });
+
+            } catch (error) {
+                console.error("Error assigning rider:", error);
+                res.status(500).json({ message: "Failed to assign rider", error });
+            }
+        });
         // parcel data by id
         app.get("/parcels/:id", async (req, res) => {
             try {
@@ -344,6 +394,25 @@ async function run() {
                 res.status(500).json({ message: "Failed to delete parcel", error });
             }
         });
+        // get rider data 
+        app.get("/riders", verifyFbToken, async (req, res) => {
+            try {
+                const { region } = req.query;
+
+                let query = { status: "Active" };
+                if (region) {
+                    query.region = { $regex: `^${region}$`, $options: "i" };
+                }
+
+                const riders = await ridersCollection.find(query).toArray();
+                res.send(riders);
+
+            } catch (error) {
+                console.error("Error loading riders:", error);
+                res.status(500).json({ message: "Failed to load riders", error });
+            }
+        });
+
         // riders data post
         app.post('/riders', async (req, res) => {
             try {
