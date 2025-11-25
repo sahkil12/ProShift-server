@@ -25,7 +25,7 @@ async function run() {
     try {
         await client.connect();
         const db = client.db("ProShift");
-        const parcelCollection = db.collection("parcels")
+        const parcelsCollection = db.collection("parcels")
         const paymentCollection = db.collection("payments");
         const usersCollection = db.collection("users");
         const ridersCollection = db.collection("riders")
@@ -230,7 +230,7 @@ async function run() {
                     query.delivery_status = delivery_status
                 }
 
-                const parcels = await parcelCollection
+                const parcels = await parcelsCollection
                     .find(query)
                     .sort({ creation_date: -1 })
                     .toArray();
@@ -267,7 +267,7 @@ async function run() {
                         assignedAt: new Date()
                     }
                 };
-                const parcelResult = await parcelCollection.updateOne(
+                const parcelResult = await parcelsCollection.updateOne(
                     { _id: new ObjectId(parcelId) },
                     updateDoc
                 );
@@ -298,7 +298,7 @@ async function run() {
             try {
                 const { id } = req.params;
                 const query = { _id: new ObjectId(id) }
-                const parcel = await parcelCollection.findOne(query);
+                const parcel = await parcelsCollection.findOne(query);
 
                 if (!parcel) {
                     return res.status(404).json({ message: "Parcel not found" });
@@ -313,14 +313,14 @@ async function run() {
         app.post("/parcels", async (req, res) => {
             try {
                 const parcelData = req.body;
-                const result = await parcelCollection.insertOne(parcelData);
+                const result = await parcelsCollection.insertOne(parcelData);
                 res.status(201).send(result)
             } catch (error) {
                 console.error("Error saving parcel:", error);
                 res.status(500).json({ message: "Failed to save parcel", error });
             }
         });
-
+        // parcel mark picked up api
         app.patch("/parcels/mark-picked/:id", verifyFbToken, verifyRider, async (req, res) => {
             try {
                 const parcelId = req.params.id;
@@ -332,7 +332,7 @@ async function run() {
                     }
                 };
 
-                const result = await parcelCollection.updateOne(
+                const result = await parcelsCollection.updateOne(
                     { _id: new ObjectId(parcelId) },
                     updateDoc
                 );
@@ -345,12 +345,12 @@ async function run() {
                 res.status(500).send({ message: "Failed to update", error });
             }
         });
-
+        // parcel mark delivered api
         app.patch("/parcels/mark-delivered/:id", verifyFbToken, verifyRider, async (req, res) => {
             try {
                 const parcelId = req.params.id;
 
-                const parcel = await parcelCollection.findOne({ _id: new ObjectId(parcelId) })
+                const parcel = await parcelsCollection.findOne({ _id: new ObjectId(parcelId) })
 
 
                 const updateDoc = {
@@ -360,12 +360,12 @@ async function run() {
                     }
                 };
 
-                const result = await parcelCollection.updateOne(
+                const result = await parcelsCollection.updateOne(
                     { _id: new ObjectId(parcelId) },
                     updateDoc
                 );
 
-                const riderUpdate = await parcelCollection.updateOne(
+                const riderUpdate = await parcelsCollection.updateOne(
                     { email: parcel.assignedEmail },
                     {
                         $set: {
@@ -383,7 +383,6 @@ async function run() {
                 res.status(500).send({ message: "Failed to update", error });
             }
         });
-
         // payment intent 
         app.post("/create-payment-intent", async (req, res) => {
             try {
@@ -406,7 +405,7 @@ async function run() {
             try {
                 const { parcelId, amount, paymentId, userEmail, transactionId, payment_method } = req.body;
                 // Update parcel payment_status
-                const parcelResult = await parcelCollection.updateOne(
+                const parcelResult = await parcelsCollection.updateOne(
                     { _id: new ObjectId(parcelId) },
                     {
                         $set: {
@@ -465,7 +464,7 @@ async function run() {
         app.delete("/parcels/:id", async (req, res) => {
             try {
                 const { id } = req.params;
-                const result = await parcelCollection.deleteOne({ _id: new ObjectId(id) });
+                const result = await parcelsCollection.deleteOne({ _id: new ObjectId(id) });
                 res.status(200).send(result)
             } catch (error) {
                 console.error("Error deleting parcel:", error);
@@ -490,6 +489,17 @@ async function run() {
                 res.status(500).json({ message: "Failed to load riders", error });
             }
         });
+        // get completed delivery
+        app.get("/rider/completed-deliveries", verifyFbToken, verifyRider, async (req, res) => {
+            const riderEmail = req.decoded.email;
+            // 
+            const completed = await parcelsCollection.find({
+                assignedEmail: riderEmail,
+                delivery_status: "delivered"
+            }).sort({ delivered_at: -1 }).toArray();
+
+            res.send(completed);
+        });
         // get pending delivery
         app.get("/rider/pending-deliveries", verifyFbToken, verifyRider, async (req, res) => {
             try {
@@ -504,7 +514,7 @@ async function run() {
                     delivery_status: { $in: ["rider-assigned", "in-transit"] }
                 };
 
-                const pendingParcels = await parcelCollection.find(query).toArray();
+                const pendingParcels = await parcelsCollection.find(query).toArray();
 
                 res.send(pendingParcels);
 
