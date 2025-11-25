@@ -64,6 +64,20 @@ async function run() {
             }
             next()
         }
+        // rider verify 
+        const verifyRider = async (req, res, next) => {
+            const userEmail = req.decoded.email
+            const user = await usersCollection.findOne({
+                email: userEmail
+            })
+            // rider check 
+            if (!user || user.role !== "rider") {
+                return res.status(403).send({
+                    message: "Access denied (Rider only)"
+                })
+            }
+            next()
+        }
         // search user by admin
         app.get("/admin/users/search", verifyFbToken, verifyAdmin, async (req, res) => {
             const emailQuery = req.query.email;
@@ -233,8 +247,7 @@ async function run() {
         app.patch("/parcels/assign-rider/:id", verifyFbToken, async (req, res) => {
             try {
                 const parcelId = req.params.id;
-                const { riderId } = req.body;
-
+                const { riderId, riderEmail } = req.body;
                 if (!riderId) {
                     return res.status(400).send({ message: "Rider ID is required" });
                 }
@@ -249,7 +262,8 @@ async function run() {
                 const updateDoc = {
                     $set: {
                         assignedRider: riderId,
-                        delivery_status: "in-delivery",
+                        assignedEmail: riderEmail,
+                        delivery_status: "rider-assigned",
                         assignedAt: new Date()
                     }
                 };
@@ -306,6 +320,70 @@ async function run() {
                 res.status(500).json({ message: "Failed to save parcel", error });
             }
         });
+
+        app.patch("/parcels/mark-picked/:id", verifyFbToken, verifyRider, async (req, res) => {
+            try {
+                const parcelId = req.params.id;
+
+                const updateDoc = {
+                    $set: {
+                        delivery_status: "in-transit",
+                        picked_at: new Date()
+                    }
+                };
+
+                const result = await parcelCollection.updateOne(
+                    { _id: new ObjectId(parcelId) },
+                    updateDoc
+                );
+
+                res.send({
+                    message: "Parcel marked as picked up",
+                    result
+                });
+            } catch (error) {
+                res.status(500).send({ message: "Failed to update", error });
+            }
+        });
+
+        app.patch("/parcels/mark-delivered/:id", verifyFbToken, verifyRider, async (req, res) => {
+            try {
+                const parcelId = req.params.id;
+
+                const parcel = await parcelCollection.findOne({ _id: new ObjectId(parcelId) })
+
+
+                const updateDoc = {
+                    $set: {
+                        delivery_status: "delivered",
+                        delivered_at: new Date()
+                    }
+                };
+
+                const result = await parcelCollection.updateOne(
+                    { _id: new ObjectId(parcelId) },
+                    updateDoc
+                );
+
+                const riderUpdate = await parcelCollection.updateOne(
+                    { email: parcel.assignedEmail },
+                    {
+                        $set: {
+                            work_status: "available"
+                        }
+                    }
+                )
+
+                res.send({
+                    message: "Parcel delivered successfully",
+                    result,
+                    riderUpdate,
+                });
+            } catch (error) {
+                res.status(500).send({ message: "Failed to update", error });
+            }
+        });
+
         // payment intent 
         app.post("/create-payment-intent", async (req, res) => {
             try {
@@ -412,7 +490,29 @@ async function run() {
                 res.status(500).json({ message: "Failed to load riders", error });
             }
         });
+        // get pending delivery
+        app.get("/rider/pending-deliveries", verifyFbToken, verifyRider, async (req, res) => {
+            try {
+                const riderEmail = req.decoded.email;
+                // rider email check
+                if (!riderEmail) {
+                    return res.status(400).send({ message: "Invalid rider email" });
+                }
 
+                const query = {
+                    assignedEmail: riderEmail,
+                    delivery_status: { $in: ["rider-assigned", "in-transit"] }
+                };
+
+                const pendingParcels = await parcelCollection.find(query).toArray();
+
+                res.send(pendingParcels);
+
+            } catch (error) {
+                console.error("Error fetching rider pending deliveries:", error);
+                res.status(500).send({ message: "Failed to load pending deliveries", error });
+            }
+        });
         // riders data post
         app.post('/riders', async (req, res) => {
             try {
@@ -558,7 +658,6 @@ app.get("/", (req, res) => {
     res.send("ProShift Parcel Delivery API is running 🚚");
 });
 // start server
-
 app.listen(PORT, () => {
     console.log(`✅ Server running on port ${PORT}`);
 });
