@@ -139,6 +139,32 @@ async function run() {
                 result
             });
         });
+        // admin cash out requests approve
+        app.get("/admin/cashout-requests", verifyFbToken, verifyAdmin, async (req, res) => {
+            const pending = await parcelsCollection.find({
+                cashout_status: "pending"
+            }).toArray();
+            res.send(pending);
+        });
+        // approve rider cash out request
+        app.patch("/admin/cashout/approve/:id", verifyFbToken, verifyAdmin, async (req, res) => {
+            const id = req.params.id;
+
+            const result = await parcelsCollection.updateOne(
+                { _id: new ObjectId(id) },
+                {
+                    $set: {
+                        cashout_status: "cashed_out",
+                        cashed_out_at: new Date().toISOString()
+                    }
+                }
+            );
+
+            res.send({
+                message: "Cashout approved",
+                result
+            });
+        });
         // Find user role by email
         app.get("/users/role/:email", verifyFbToken, async (req, res) => {
             try {
