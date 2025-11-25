@@ -243,6 +243,29 @@ async function run() {
                 });
             }
         });
+        // cash out parcel 
+        app.patch("/parcels/cashout/:id", verifyFbToken, verifyRider, async (req, res) => {
+            const id = req.params.id
+
+            const parcel = await parcelsCollection.findOne({ _id: new ObjectId(id) });
+
+            if (parcel.cashout_status === "pending" || parcel.cashout_status === "cashed_out") {
+                return res.status(400).send({ message: "Cashout already requested or completed" });
+            }
+
+            const result = await parcelsCollection.updateOne(
+                { _id: new ObjectId(id) },
+                {
+                    $set: {
+                        cashout_status: "pending",
+                    }
+                }
+            )
+            res.send({
+                message: "Cashout request submitted",
+                result
+            })
+        })
         // 
         app.patch("/parcels/assign-rider/:id", verifyFbToken, async (req, res) => {
             try {
@@ -493,12 +516,14 @@ async function run() {
         app.get("/rider/completed-deliveries", verifyFbToken, verifyRider, async (req, res) => {
             const riderEmail = req.decoded.email;
             // 
-            const completed = await parcelsCollection.find({
+            const parcels = await parcelsCollection.find({
                 assignedEmail: riderEmail,
                 delivery_status: "delivered"
-            }).sort({ delivered_at: -1 }).toArray();
+            })
+                .sort({ delivered_at: -1 })
+                .toArray();
 
-            res.send(completed);
+            res.send(parcels);
         });
         // get pending delivery
         app.get("/rider/pending-deliveries", verifyFbToken, verifyRider, async (req, res) => {
