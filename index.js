@@ -29,6 +29,7 @@ async function run() {
         const paymentCollection = db.collection("payments");
         const usersCollection = db.collection("users");
         const ridersCollection = db.collection("riders")
+        const trackingCollection = db.collection("tracking")
 
         // custom verify token 
         const verifyFbToken = async (req, res, next) => {
@@ -292,7 +293,7 @@ async function run() {
                 result
             })
         })
-        // 
+        // admin assign rider for parcel
         app.patch("/parcels/assign-rider/:id", verifyFbToken, async (req, res) => {
             try {
                 const parcelId = req.params.id;
@@ -398,9 +399,7 @@ async function run() {
         app.patch("/parcels/mark-delivered/:id", verifyFbToken, verifyRider, async (req, res) => {
             try {
                 const parcelId = req.params.id;
-
                 const parcel = await parcelsCollection.findOne({ _id: new ObjectId(parcelId) })
-
 
                 const updateDoc = {
                     $set: {
@@ -414,7 +413,7 @@ async function run() {
                     updateDoc
                 );
 
-                const riderUpdate = await parcelsCollection.updateOne(
+                const riderUpdate = await ridersCollection.updateOne(
                     { email: parcel.assignedEmail },
                     {
                         $set: {
@@ -422,7 +421,6 @@ async function run() {
                         }
                     }
                 )
-
                 res.send({
                     message: "Parcel delivered successfully",
                     result,
@@ -438,7 +436,7 @@ async function run() {
                 const { amount, parcelId } = req.body;
 
                 const paymentIntent = await stripe.paymentIntents.create({
-                    amount: amount * 100, // Stripe needs amount in cents
+                    amount: amount * 100, 
                     currency: "usd",
                     metadata: { parcelId },
                     payment_method_types: ["card"]
@@ -520,6 +518,39 @@ async function run() {
                 res.status(500).json({ message: "Failed to delete parcel", error });
             }
         });
+        // {tracking }
+        app.post("/tracking", async (req, res) => {
+            try {
+                const trackingData = req.body;
+                const result = await trackingCollection.insertOne(trackingData);
+                res.send({ insertedId: result.insertedId });
+            } catch (error) {
+                console.error("Error creating tracking:", error);
+                res.status(500).json({ message: "Failed to create tracking", error });
+            }
+        });
+
+        // PATCH /tracking/update/:trackingId
+        app.patch("/tracking/progress/:trackingId", async (req, res) => {
+            const { trackingId } = req.params;
+            const { status } = req.body;
+
+            try {
+                const timestamp = new Date().toISOString();
+                const result = await trackingCollection.updateOne(
+                    { trackingId },
+                    {
+                        $set: { currentStatus: status },
+                        $push: { history: { status, timestamp } }
+                    }
+                );
+                res.json({ message: "Tracking updated", status, timestamp });
+            } catch (error) {
+                console.error("Error updating tracking:", error);
+                res.status(500).json({ message: "Failed to update tracking", error });
+            }
+        });
+
         // get rider data 
         app.get("/riders", verifyFbToken, async (req, res) => {
             try {
