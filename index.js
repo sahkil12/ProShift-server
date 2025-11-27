@@ -430,13 +430,24 @@ async function run() {
                 res.status(500).send({ message: "Failed to update", error });
             }
         });
+        // Delete parcel by ID
+        app.delete("/parcels/:id", async (req, res) => {
+            try {
+                const { id } = req.params;
+                const result = await parcelsCollection.deleteOne({ _id: new ObjectId(id) });
+                res.status(200).send(result)
+            } catch (error) {
+                console.error("Error deleting parcel:", error);
+                res.status(500).json({ message: "Failed to delete parcel", error });
+            }
+        });
         // payment intent 
         app.post("/create-payment-intent", async (req, res) => {
             try {
                 const { amount, parcelId } = req.body;
 
                 const paymentIntent = await stripe.paymentIntents.create({
-                    amount: amount * 100, 
+                    amount: amount * 100,
                     currency: "usd",
                     metadata: { parcelId },
                     payment_method_types: ["card"]
@@ -507,15 +518,26 @@ async function run() {
                 res.status(500).json({ message: "Failed to fetch payments", error });
             }
         });
-        // Delete parcel by ID
-        app.delete("/parcels/:id", async (req, res) => {
+        // get tracking data 
+        app.get("/tracking/:trackingId", verifyFbToken, async (req, res) => {
             try {
-                const { id } = req.params;
-                const result = await parcelsCollection.deleteOne({ _id: new ObjectId(id) });
-                res.status(200).send(result)
+                const { trackingId } = req.params;
+                const email = req.decoded.email;
+
+                const tracking = await trackingCollection.findOne({ trackingId });
+                if (!tracking) {
+                    return res.status(404).send({ message: "Tracking not found" });
+                }
+
+                // Prevent users from viewing others' parcels
+                if (tracking.userEmail !== email) {
+                    return res.status(403).send({ message: "forbidden access" });
+                }
+
+                res.send(tracking);
+
             } catch (error) {
-                console.error("Error deleting parcel:", error);
-                res.status(500).json({ message: "Failed to delete parcel", error });
+                res.status(500).json({ message: "Failed to fetch tracking", error });
             }
         });
         // {tracking }
@@ -529,7 +551,6 @@ async function run() {
                 res.status(500).json({ message: "Failed to create tracking", error });
             }
         });
-
         // PATCH /tracking/update/:trackingId
         app.patch("/tracking/progress/:trackingId", async (req, res) => {
             const { trackingId } = req.params;
@@ -550,7 +571,6 @@ async function run() {
                 res.status(500).json({ message: "Failed to update tracking", error });
             }
         });
-
         // get rider data 
         app.get("/riders", verifyFbToken, async (req, res) => {
             try {
