@@ -359,6 +359,37 @@ async function run() {
                 res.status(500).json({ message: "Failed to get parcel", error: error.message });
             }
         });
+
+        // GET /admin/parcel-status-counts
+        app.get("/parcels/delivery/status-counts",  async (req, res) => {
+            try {
+                const pipeline =[
+                    {
+                        $group:{
+                            _id: "$delivery_status",
+                            count:{
+                                $sum: 1
+                            }
+                        }
+                    },
+                    {
+                        $project:{
+                            status: "$_id",
+                            count: 1,
+                            _id: 0
+                        }
+                    }
+                ]
+                const result = await parcelsCollection.aggregate(pipeline).toArray()
+                res.send(result)
+                
+            } catch (error) {
+                console.error(error);
+                res.status(500).send({ message: "Failed to load status counts" });
+            }
+        });
+
+
         // post parcel data 
         app.post("/parcels", async (req, res) => {
             try {
@@ -441,6 +472,8 @@ async function run() {
                 res.status(500).json({ message: "Failed to delete parcel", error });
             }
         });
+
+
         // payment intent 
         app.post("/create-payment-intent", async (req, res) => {
             try {
