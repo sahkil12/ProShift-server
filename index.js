@@ -376,6 +376,25 @@ async function run() {
                 res.status(500).json({ message: "Failed to load weekly deliveries" });
             }
         });
+        // rider recent delivery 
+        app.get("/rider/recent-deliveries", verifyFbToken, verifyRider, async (req, res) => {
+            try {
+                const riderEmail = req.decoded.email;
+                const query = {
+                    assignedEmail: riderEmail,
+                    delivery_status: "delivered"
+                }
+                const lastDeliveries = await parcelsCollection
+                    .find(query)
+                    .sort({ delivered_at: -1 })
+                    .limit(5)
+                    .toArray()
+                res.json(lastDeliveries)
+            }
+            catch (err) {
+                res.status(500).json({ message: "Failed to load last deliveries" })
+            }
+        })
         // parcel data by email id 
         app.get("/parcels", verifyFbToken, async (req, res) => {
             try {
