@@ -172,6 +172,23 @@ async function run() {
                 const totalUsers = await usersCollection.countDocuments({ role: "user" });
                 const totalRiders = await usersCollection.countDocuments({ role: "rider" });
                 const totalAdmins = await usersCollection.countDocuments({ role: "admin" });
+                const today = new Date()
+                today.setHours(0, 0, 0, 0)
+
+                const todayRevenueAgg = await paymentCollection.aggregate([
+                    {
+                        $match: {
+                            payment_date: { $gte: today }
+                        }
+                    },
+                    {
+                        $group: {
+                            _id: null,
+                            total: { $sum: "$amount" }
+                        }
+                    }
+                ]).toArray()
+                const todayRevenue = todayRevenueAgg[0]?.total || 0;
 
                 const totalRevenueAgg = await paymentCollection.aggregate([
                     { $group: { _id: null, total: { $sum: "$amount" }, count: { $sum: 1 } } }
@@ -188,7 +205,8 @@ async function run() {
                     },
                     payments: {
                         totalRevenue,
-                        totalPayments
+                        totalPayments,
+                        todayRevenue
                     }
                 });
 
@@ -265,6 +283,97 @@ async function run() {
 
             } catch (error) {
                 res.status(500).send({ message: "Server error" });
+            }
+        });
+        // some rider status count
+        app.get("/rider/stats", verifyFbToken, verifyRider, async (req, res) => {
+            try {
+                const riderEmail = req.decoded.email
+                const today = new Date();
+                today.setHours(0, 0, 0, 0);
+                const stats = await parcelsCollection.aggregate([
+                    {
+                        $match: {
+                            assignedEmail: riderEmail,
+                            delivery_status: "delivered"
+                        }
+                    },
+                    {
+                        $addFields: {
+                            earning: {
+                                $round: [
+                                    {
+                                        $cond: [
+                                            { $eq: ["$senderCenter", "$receiverCenter"] },
+                                            { $multiply: ["$totalCost", 0.8] },
+                                            { $multiply: ["$totalCost", 0.4] }
+                                        ]
+                                    },
+                                    0
+                                ]
+                            },
+                            isToday: {
+                                $gte: ["$delivered_at", today]
+                            }
+                        }
+                    },
+                    {
+                        $group: {
+                            _id: null,
+                            totalDeliveries: { $sum: 1 },
+                            totalEarnings: { $sum: "$earning" },
+                            todayDeliveries: {
+                                $sum: {
+                                    $cond: [{ $eq: ["$isToday", true] }, 1, 0]
+                                }
+                            },
+                            todayEarnings: {
+                                $sum: {
+                                    $cond: [{ $eq: ["$isToday", true] }, "$earning", 0]
+                                }
+                            }
+                        }
+                    }
+                ]).toArray();
+                res.status(200).json(stats[0] || {
+                    totalDeliveries: 0,
+                    totalEarnings: 0,
+                    todayDeliveries: 0,
+                    todayEarnings: 0
+                });
+            } catch (err) {
+                console.error("Rider stats error:", err);
+                res.status(500).json({ message: "Failed to load rider stats" });
+            }
+        });
+        // rider weekly delivery status 
+        app.get("/rider/weekly-deliveries", verifyFbToken, verifyRider, async (req, res) => {
+            try {
+                const riderEmail = req.decoded.email;
+
+                const today = new Date();
+                today.setHours(0, 0, 0, 0);
+
+                const sevenDaysAgo = new Date(today);
+                sevenDaysAgo.setDate(today.getDate() - 6);
+                // Get delivered parcels in last 7 days
+                const parcels = await parcelsCollection.find({
+                    assignedEmail: riderEmail,
+                    delivery_status: "delivered",
+                    delivered_at: { $gte: sevenDaysAgo }
+                }).toArray();
+                // Prepare week data object
+                const weekData = [];
+                for (let i = 0; i < 7; i++) {
+                    const day = new Date(sevenDaysAgo);
+                    day.setDate(sevenDaysAgo.getDate() + i);
+                    const key = day.toISOString().split("T")[0];
+                    const count = parcels.filter(p => p.delivered_at.toISOString().split("T")[0] === key).length;
+                    weekData.push({ date: key, deliveries: count });
+                }
+                res.json(weekData);
+            } catch (err) {
+                res.status(500).json({ message: "Failed to load weekly deliveries" });
             }
         });
         // parcel data by email id 
@@ -820,7 +929,6 @@ async function run() {
         // await client.db("admin").command({ ping: 1 });
         // console.log("Pinged your deployment. You successfully connected to MongoDB!");
     } finally {
-
     }
 }
 run().catch(console.dir);
