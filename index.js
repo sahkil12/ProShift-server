@@ -166,6 +166,37 @@ async function run() {
                 result
             });
         });
+        // admin dashboard data 
+        app.get("/admin/stats", verifyFbToken, verifyAdmin, async (req, res) => {
+            try {
+                const totalUsers = await usersCollection.countDocuments({ role: "user" });
+                const totalRiders = await usersCollection.countDocuments({ role: "rider" });
+                const totalAdmins = await usersCollection.countDocuments({ role: "admin" });
+
+                const totalRevenueAgg = await paymentCollection.aggregate([
+                    { $group: { _id: null, total: { $sum: "$amount" }, count: { $sum: 1 } } }
+                ]).toArray();
+
+                const totalRevenue = totalRevenueAgg.length > 0 ? totalRevenueAgg[0].total : 0;
+                const totalPayments = totalRevenueAgg.length > 0 ? totalRevenueAgg[0].count : 0;
+
+                res.status(200).send({
+                    users: {
+                        totalUsers,
+                        totalRiders,
+                        totalAdmins,
+                    },
+                    payments: {
+                        totalRevenue,
+                        totalPayments
+                    }
+                });
+
+            } catch (error) {
+                console.error("Admin stats error:", error);
+                res.status(500).json({ message: "Failed to load admin stats" });
+            }
+        });
         // Find user role by email
         app.get("/users/role/:email", verifyFbToken, async (req, res) => {
             try {
@@ -359,21 +390,20 @@ async function run() {
                 res.status(500).json({ message: "Failed to get parcel", error: error.message });
             }
         });
-
-        // GET /admin/parcel-status-counts
-        app.get("/parcels/delivery/status-counts",  async (req, res) => {
+        // GET /parcels/delivery/status-counts 
+        app.get("/parcels/delivery/status-counts", async (req, res) => {
             try {
-                const pipeline =[
+                const pipeline = [
                     {
-                        $group:{
+                        $group: {
                             _id: "$delivery_status",
-                            count:{
+                            count: {
                                 $sum: 1
                             }
                         }
                     },
                     {
-                        $project:{
+                        $project: {
                             status: "$_id",
                             count: 1,
                             _id: 0
@@ -382,14 +412,12 @@ async function run() {
                 ]
                 const result = await parcelsCollection.aggregate(pipeline).toArray()
                 res.send(result)
-                
+
             } catch (error) {
                 console.error(error);
                 res.status(500).send({ message: "Failed to load status counts" });
             }
         });
-
-
         // post parcel data 
         app.post("/parcels", async (req, res) => {
             try {
@@ -472,8 +500,6 @@ async function run() {
                 res.status(500).json({ message: "Failed to delete parcel", error });
             }
         });
-
-
         // payment intent 
         app.post("/create-payment-intent", async (req, res) => {
             try {
@@ -791,8 +817,8 @@ async function run() {
             res.send(result);
         });
         // Send a ping to confirm a successful connection
-        await client.db("admin").command({ ping: 1 });
-        console.log("Pinged your deployment. You successfully connected to MongoDB!");
+        // await client.db("admin").command({ ping: 1 });
+        // console.log("Pinged your deployment. You successfully connected to MongoDB!");
     } finally {
 
     }
