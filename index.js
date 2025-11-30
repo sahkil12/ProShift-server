@@ -285,6 +285,39 @@ async function run() {
                 res.status(500).send({ message: "Server error" });
             }
         });
+        // user dashboard data api
+        app.get("/user/dashboard-stats", verifyFbToken, async (req, res) => {
+            try {
+                const userEmail = req.decoded.email;
+                //  Get all parcels of this user send
+                const parcels = await parcelsCollection.find({ userEmail: userEmail }).toArray();
+                // Calculate stats 
+                let totalSent = parcels.length;
+                let delivered = parcels.filter(p => p.delivery_status === "delivered").length;
+                let pending = parcels.filter(p =>
+                    p.delivery_status !== "delivered"
+                ).length;
+
+                let totalSpent = parcels.reduce((sum, p) => sum + (p.totalCost || 0), 0);
+                // Last 5 parcels user sent
+                const lastFiveParcels = await parcelsCollection
+                    .find({ userEmail: userEmail })
+                    .sort({ createdAt: -1 })
+                    .limit(5)
+                    .toArray();
+
+                res.json({
+                    totalSent,
+                    delivered,
+                    pending,
+                    totalSpent,
+                    lastFiveParcels
+                });
+
+            } catch (err) {
+                res.status(500).json({ message: "Failed to load dashboard" });
+            }
+        });
         // some rider status count
         app.get("/rider/stats", verifyFbToken, verifyRider, async (req, res) => {
             try {
@@ -380,12 +413,12 @@ async function run() {
         app.get("/rider/recent-deliveries", verifyFbToken, verifyRider, async (req, res) => {
             try {
                 const riderEmail = req.decoded.email;
-                const query = {
-                    assignedEmail: riderEmail,
-                    delivery_status: "delivered"
-                }
+               
                 const lastDeliveries = await parcelsCollection
-                    .find(query)
+                    .find({
+                        assignedEmail: riderEmail,
+                        delivery_status: "delivered"
+                    })
                     .sort({ delivered_at: -1 })
                     .limit(5)
                     .toArray()
