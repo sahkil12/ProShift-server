@@ -12,7 +12,9 @@ const stripe = require('stripe')(process.env.PAYMENT_KEY);
 app.use(cors());
 app.use(express.json());
 // firebase admin 
-const serviceAccount = require("./proshift-firebase-admin-key.json");
+const decodedKey = Buffer.from(process.env.FIREBASE_SERVICE_KEY, "base64").toString("utf8")
+const serviceAccount = JSON.parse(decodedKey)
+
 admin.initializeApp({
     credential: admin.credential.cert(serviceAccount)
 });
@@ -413,7 +415,7 @@ async function run() {
         app.get("/rider/recent-deliveries", verifyFbToken, verifyRider, async (req, res) => {
             try {
                 const riderEmail = req.decoded.email;
-               
+
                 const lastDeliveries = await parcelsCollection
                     .find({
                         assignedEmail: riderEmail,
@@ -979,7 +981,7 @@ async function run() {
         });
         // Send a ping to confirm a successful connection
         // await client.db("admin").command({ ping: 1 });
-        // console.log("Pinged your deployment. You successfully connected to MongoDB!");
+        console.log("Pinged your deployment. You successfully connected to MongoDB!");
     } finally {
     }
 }
